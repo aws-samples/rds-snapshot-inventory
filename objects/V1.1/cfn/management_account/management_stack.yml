@@ -1,0 +1,271 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  Stack that will deployed across all accounts in an org so step function and
+  lambda can assume
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - 
+        Label:
+          default: "Common Parameters Configuration"
+        Parameters:
+          - ManagementAccountId
+          - PrimaryRegion
+          - PrincipalOrgID
+          - MonitoringAccountId
+          - ExcludedAccounts
+          - TemplateVersion
+          - SourceCodeBucketPrefix
+          - StepFunctionRoleArn
+    ParameterLabels:
+      ManagementAccountId:
+        default: "Management or Payer Account Id"
+      PrimaryRegion:
+        default: "Primary region name, e.g. us-east-1 or any other region"
+      PrincipalOrgID:
+        default: "Principal Organization ID, example: o-aaa45bbbed"
+      MonitoringAccountId:
+        default: "Monitoring Account Id"
+      ExcludedAccounts:
+        default: "Comma separated list of AWS Account Ids to be excluded from the orphan snapshot process"  
+      TemplateVersion:
+        default: "Template version, expected value V1.1 etc"
+      SourceCodeBucketPrefix:
+        default: "Source Code Bucket Prefix, example: snapshot-insight-source-code"  
+      StepFunctionRoleArn:
+        default: "Step Function Role Arn"    
+      # SourceAccountIds:
+      #   default: "Source Account Ids"
+Parameters:
+  ManagementAccountId:
+    Type: String
+    Description: "Management or Payer AWS Account Id (Current Account)"
+    AllowedPattern: '\d{12}'
+    Default: 111111111111
+  PrimaryRegion:
+    Type: String
+    Default: us-east-1
+  PrincipalOrgID:
+    Type: String
+    Description: "Principal Organization ID, example: o-aaa45bbbed"
+    AllowedPattern: 'o-[a-z0-9]{10,32}'  
+  MonitoringAccountId:
+    Type: String
+    Description: "12 Digit AWS Account Id where output data will be analyzed"
+    AllowedPattern: '\d{12}'
+    Default: 111111111111
+  ExcludedAccounts:
+    Description: "Comma separated list of AWS Account Ids to be excluded from the orphan snapshot process"
+    Type: CommaDelimitedList
+    Default: "111111111111,222222222222"
+  TemplateVersion:
+    Type: String
+    Default: V1.1
+  SourceCodeBucketPrefix:
+    Type: String  
+  RawDataS3BucketArn:
+    Type: String
+    Description: "S3 Bucket Arn where raw data will be stored"
+  StepFunctionRoleArn:
+    Type: String
+Conditions:
+  IsManagementAccount: !And [!Equals [!Ref ManagementAccountId,!Ref AWS::AccountId], !Equals [!Ref PrimaryRegion, !Ref AWS::Region]] 
+  isMonitoringAccount: !And [ !Equals [!Ref MonitoringAccountId, !Ref AWS::AccountId], !Equals [!Ref PrimaryRegion, !Ref AWS::Region]] 
+  IsPrimaryRegion: !Equals 
+    - !Ref PrimaryRegion
+    - !Ref AWS::Region
+Outputs:
+  SnapshotInsightLambdaRole: 
+    Condition: IsPrimaryRegion
+    Description: For AWS Services to assume in Monitoring Linked Account
+    Value:
+      'Fn::GetAtt':
+        - SnapshotInsightLambdaRole
+        - Arn
+Resources:
+  SnapshotInsightExcludedAccounts:
+    Type: AWS::SSM::Parameter
+    Condition: IsPrimaryRegion
+    Properties:
+      Name: /blog/snapshot-insight/excluded-account-ids
+      Type: StringList
+      Value: !Join [",", !Split [',', !Join [',', !Ref ExcludedAccounts]]]
+  SnapshotInsightLambda:
+    Type: 'AWS::Lambda::Function'
+    Condition: IsPrimaryRegion
+    Properties:
+      Description: Lambda Function to retrieve Orphan Snapshots
+      FunctionName: Snapshot-Insight
+      Handler: osnap.lambda_handler
+      MemorySize: 8846
+      Architectures:
+        - arm64
+      EphemeralStorage:
+        Size: 512
+      Runtime: python3.12
+      Role: !GetAtt SnapshotInsightLambdaRole.Arn
+      Timeout: 900
+      PackageType: Zip
+      Environment:
+        Variables:
+          LOG_GROUP: /aws/lambda/Snapshot-Insight
+          RDS_INS_OPS: rds_ins
+          RDS_CLS_OPS: rds_cls
+          SKIP_OPS: skip
+          EXCLUDED_ACCOUNTS: !GetAtt SnapshotInsightExcludedAccounts.Name
+      Code:
+        S3Bucket: !Sub ${SourceCodeBucketPrefix}-${ManagementAccountId}-${PrimaryRegion}
+        S3Key: !Sub objects/${TemplateVersion}/lambda/zip/Snapshot-Insight.zip
+  SnapshotInsightMgmntAccountRole:
+    Type: AWS::IAM::Role
+    Condition: IsManagementAccount 
+    Properties:
+      RoleName: SnapshotInsightMgmntAccountRole
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Ref StepFunctionRoleArn
+        Version: 2012-10-17
+      Path: /
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AWSOrganizationsReadOnlyAccess"
+  
+  SnapshotInsightLambdaRole:
+    Type: AWS::IAM::Role
+    Condition: IsPrimaryRegion 
+    Properties:
+      RoleName: SnapshotInsightLambdaRole
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Ref StepFunctionRoleArn
+              Service: 
+                - "lambda.amazonaws.com"
+        Version: 2012-10-17
+      Path: /
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AWSOrganizationsReadOnlyAccess"
+        - "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+  RDSPermission:
+    Type: 'AWS::IAM::Policy'
+    Condition: IsPrimaryRegion
+    Properties:
+      PolicyName: RDS_Permission
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "rds:DescribeDBInstances"
+              - "rds:DescribeDBSnapshots"
+              - "rds:DescribeDBClusters"
+              - "rds:DescribeDBClusterSnapshots"
+            Resource: 
+              - "arn:aws:rds:*:*:db:*"
+              - "arn:aws:rds:*:*:snapshot:*"
+              - "arn:aws:rds:*:*:cluster:*"
+              - "arn:aws:rds:*:*:cluster-snapshot:*"
+      Roles:
+        - Ref: SnapshotInsightLambdaRole         
+  S3RawBucketPutObjectAccess:
+    Type: 'AWS::IAM::Policy'
+    Condition: IsPrimaryRegion
+    Properties:
+      PolicyName: S3_Permission
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "s3:PutObject"
+              - "s3:GetBucketLocation"
+            Resource: 
+              - !Ref RawDataS3BucketArn
+      Roles:
+        - Ref: SnapshotInsightLambdaRole
+  LambdaInvoke:
+    Type: 'AWS::IAM::Policy'
+    Condition: IsPrimaryRegion
+    Properties:
+      PolicyName: Lambda_Invoke
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "lambda:InvokeFunction"
+            Resource: 
+              - !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:Snapshot-Insight:*"
+              - !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:Snapshot-Insight"
+      Roles:
+        - Ref: SnapshotInsightLambdaRole
+  LambdaBasicExecution:
+    Type: 'AWS::IAM::Policy'
+    Condition: IsPrimaryRegion
+    Properties:
+      PolicyName: Lambda_Basic_Execution
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: logs:CreateLogGroup
+            Resource: !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:*"
+          - Effect: Allow
+            Action:
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogStreams
+            Resource:
+              - !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/Snapshot-Insight:*"
+              - !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/Snapshot-Insight"  
+      Roles:
+        - Ref: SnapshotInsightLambdaRole  
+  SSMPermission:
+    Type: 'AWS::IAM::Policy'
+    Condition: IsPrimaryRegion
+    Properties:
+      PolicyName: SSM_Permission
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: 
+              - ssm:GetParameters
+              - ssm:GetParameter
+            Resource: !Sub arn:${AWS::Partition}:ssm:*:${AWS::AccountId}:parameter/blog/snapshot-insight/* 
+      Roles:
+        - Ref: SnapshotInsightLambdaRole 
+  #S3 Bucket Policy
+  S3BucketRawDataBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: isMonitoringAccount
+    Properties:
+      Bucket:  !Select [1, !Split [":::", !Ref RawDataS3BucketArn]] 
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:GetBucketLocation
+              - s3:GetObject
+              - s3:ListBucket
+              - s3:GetObjectTagging
+              - s3:PutObject
+            Effect: Allow
+            Resource: 
+              - !Sub ${RawDataS3BucketArn}
+              - !Sub ${RawDataS3BucketArn}/*
+            Principal:
+              AWS: 
+                - !GetAtt SnapshotInsightLambdaRole.Arn
+            Condition:
+              StringEquals:
+                aws:PrincipalOrgID: !Ref PrincipalOrgID            

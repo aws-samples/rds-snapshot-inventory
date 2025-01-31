@@ -1,0 +1,65 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  Source Code for Snapshot Insight Blog
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Common Parameters Configuration"
+        Parameters:
+          - PrincipalOrgID
+          - DeploymentType
+          - SourceCodeBucketPrefix
+    ParameterLabels:
+      PrincipalOrgID:
+        default: "Principal Organization ID, example: o-aaa45bbbed"
+      DeploymentType:
+        default: "Deployment Type, example: ORGANIZATION or CURRENT_ACCOUNT"
+      SourceCodeBucketPrefix:
+        default: "Source Code Bucket Prefix, example: snapshot-insight-source-code"  
+Parameters:
+  PrincipalOrgID:
+    Type: String
+  DeploymentType:
+    Type: String
+    AllowedValues:
+      - ORGANIZATION
+      - CURRENT_ACCOUNT
+  SourceCodeBucketPrefix:
+    Type: String    
+Conditions:
+  isOrganizationDeployment: !Equals [!Ref DeploymentType, ORGANIZATION]                   
+Resources:
+  #S3 Buckets
+  S3BucketMonitorAccountAsset:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${SourceCodeBucketPrefix}-${AWS::AccountId}-${AWS::Region}
+      VersioningConfiguration:
+        Status: Enabled
+  # S3 Bucket Policy
+  S3BucketMonitorAccountAssetPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: isOrganizationDeployment
+    Properties:
+      Bucket: !Ref S3BucketMonitorAccountAsset
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:GetBucketLocation
+              - s3:GetObject
+              - s3:ListBucket
+              - s3:GetObjectTagging
+            Effect: Allow
+            Resource: 
+              - !Sub ${S3BucketMonitorAccountAsset.Arn}
+              - !Sub ${S3BucketMonitorAccountAsset.Arn}/*
+            Principal:
+              AWS: "*"
+            Condition:
+              StringEquals:
+                aws:PrincipalOrgID: !Ref PrincipalOrgID  
+              Bool:
+                aws:ViaAWSService: true

@@ -1,0 +1,132 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+##############################################################################################################################################################################################
+################################################################################### Snapshot Insight Config ##################################################################################
+##############################################################################################################################################################################################
+
+
+
+##########################################################################################################################################################################################
+############################################################################ Configuration for Monitoring Stack ##########################################################################
+##########################################################################################################################################################################################
+#
+#               User Guide: Please read the below table before changing the parameter value to have successful deployment.
+#               Note: ALWAYS wrap the input value with double quotes, as per Example Value provided in below table.
+#
+#   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#   | ## | Parameter Name            |     Type      |                                   Remarks                                             | Example Value - always wrap with quotes       | 
+#   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#   | 01 | stack_name                |   REQUIRED    |   Unique Cloudformation Stack Name                                                    |   stack_name = "Snapshot-Insight"             |
+#   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#   | 02 | management_account_id     |   REQUIRED    |   Management or Payer Account Id (12 digit, wrapped with quote)                       |   management_account_id = "123456789011"      |
+#   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#   | 03 | principal_org_id          |   REQUIRED    |   Unique Organization ID                                                              |   principal_org_id = "o-aaa45bbb56"           |
+#   |    |                           |               |   If your enviorment follow Master(Payer)-linked account strategy,                    |                                               |                                                       
+#   |    |                           |               |   this value can be found at AWS Organization Service page                            |                                               |
+#   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#   | 04 | deployment_type           |   REQUIRED    |   Expected Input: ORGANIZATION or CURRENT_ACCOUNT.                                    |   "ORGANIZATION" or "CURRENT_ACCOUNT"         |
+#   |    |                           |               |   Enter Organization, if you want all linked orphan snapshots info.                   |                                               |
+#   |    |                           |               |   Enter CURRENT_ACCOUNT, if you want ONLY current account snapshots info.             |   deployment_type = "ORGANIZATION"            |
+#   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#   | 05 | resource_regions          |   REQUIRED    |   Comma separated active Region(s) name (unique) to find orphan snapshots.            |   "us-east-1,us-east-2"                       |        
+#   |    |                           |               |   Typically the regions your organization use, primary and secondary regions atleast. |                                               |
+#   |    |                           |               |   Input regions must be active                                                        |   resource_regions = "us-east-1,us-east-2"    |
+#   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#   | 06 | glue_database_name        |   REQUIRED    |   Unique Glue Database name                                                           |   glue_database_name = "snapshot_insight"  |
+#   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#   | 07 | quicksight_user_name      |   CONDITIONAL |   QuickSight User name.                                                               |   quicksight_user_name = "<UserName>"         |
+#   |    |                           |               |   Leave this parameter empty if you DO NOT want QuickSight Dashboard created          |                                               |
+#   |    |                           |               |   for this solution. See https://quicksight.aws.amazon.com/sn/admin#users             |                                               |
+#   -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#   | 08 | excluded_accounts         |   CONDITIONAL |  Expected Input: Comma separated list of Account Ids.                                 |                                               |
+#   |    |                           |               |  Comma separated list of AWS Account Ids to be excluded from the orphan snapshot      |                                               | 
+#   |    |                           |               |  process. Use Case: Shared account or account with many snapshots causing lambda      |                                               |
+#   |    |                           |               |  Timeout error.                                                                       |                                               |  
+#   -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#   | 09 | Tags                      |   REQUIRED    |   All the resources created by Cloudformation will be tagged with according           |   [[Tags]]                                    |
+#   |    |                           |               |   by this key. Repeat the [[Tags]] pattern if you need to add more tags.              |                                               |
+#   -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#   | 10 | Tags - Key                |   CONDITIONAL |   Tag Key                                                                             |   Key = "Application"                         |
+#   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#   | 11 | Tags - Value              |   CONDITIONAL |   Tag Value                                                                           |   Value = "snapshot_insight"                  |
+#   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#
+#
+##############################################################################################################################################################################################
+
+[monitoring_stack]
+stack_name = "Discover-Snapshot-Insight"
+management_account_id = ""
+principal_org_id = ""
+deployment_type = "ORGANIZATION"
+resource_regions = "us-east-1,us-east-2"
+glue_database_name = "snapshot_insight"
+quicksight_user_name = ""
+excluded_accounts = ""
+[[Tags]]
+Key = "AppType"
+Value = "cost_optimization"
+[[Tags]]
+Key = "Application"
+Value = "discover_snapshot_insight"
+
+
+##############################################################################################################################################################################################
+############################################################################# Configuration for Management Stack #############################################################################
+##############################################################################################################################################################################################
+#
+#               User Guide: Change the below parameters if you have selected deployment_type = "ORGANIZATION".
+#                           DO NOT delete the key, if deployment_type = "CURRENT_ACCOUNT". Keep the value as empty sting (double quoted). 
+#               Note: ALWAYS wrap the input value with double quotes, as per Example Value provided in below table.
+#
+#   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#   | ## | Parameter Name            |     Type      |                                   Remarks                                    |   Example Value - always wrap with quotes              | 
+#   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#   | 01 | monitoring_account_id     |   REQUIRED    |   Monitoring Account Id (12 digit, wrapped with quote)                       |  monitoring_account_id = "777888777555"                |
+#   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#   | 02 | stack_set_ou_id           |   REQUIRED    |   Comma separated Unique Operating Unit Id ID                                |  stack_set_ou_id = "ou-u785-wes4rf86,ou-u888-aswq45fr" |
+#   |    |                           |               |   This value can be found at AWS Organization Service page, accessed from    |                                                        |
+#   |    |                           |               |   Master(Payer) or Linked Account. The value starts with "ou-".              |                                                        |
+#   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#   | 03 | primary_region            |   REQUIRED    |   Primary region your organization use. This value should be unique.         |  primary_region = "us-east-1"                          |        
+#   |    |                           |               |   Input regions must be active.                                              |                                                        |
+#   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#   | 04 | raw_data_s3_bucket_arn    |   REQUIRED    |   Get this value from monitoring cloudformation stack's output section       |  raw_data_s3_bucket_arn = "<IAM_Role_Arn>"             |
+#   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#   | 05 | stepfunction_role_arn     |   REQUIRED    |   Get this value from monitoring cloudformation stack's output section       |  stepfunction_role_arn = "<IAM_Role_Arn>"              |
+#   ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#
+#
+##############################################################################################################################################################################################
+
+[management_stack]
+monitoring_account_id = ""
+stack_set_ou_id = ""
+primary_region = "us-east-1"
+raw_data_s3_bucket_arn = ""
+stepfunction_role_arn = ""
+
+
+
+
+
+
+
+
+
+#***********************************************************************#
+#########################################################################
+####### DO NOT CHANGE/REMOVE any key/value - System Configuration #######
+#########################################################################
+#***********************************************************************#
+
+[system_stack]
+template_version = "V1.1"
+source_code_bucket_prefix = "aos-source-code"
+raw_data_bucket_prefix = "snapshot-insight-raw"
+formatted_data_bucket_prefix = "snapshot-insight-formatted" 
+archive_data_bucket_prefix = "snapshot-insight-archive"
+athena_query_bucket_prefix = "aws-athena-query-results-aor"
+qs_supported_regions = ["us-east-1", "us-east-2", "us-west-2", "ap-south-1", "ap-northeast-2", "ap-southeast-1", "ap-southeast-2", "ap-northeast-1", "ca-central-1", "cn-north-1", "eu-central-1", "eu-west-1", "eu-west-2", "eu-west-3", "eu-north-1", "sa-east-1"]
+
+

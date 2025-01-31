@@ -1,0 +1,852 @@
+{
+  "Comment": "A description of my state machine",
+  "StartAt": "Refresh Log Groups",
+  "States": {
+    "Refresh Log Groups": {
+      "Type": "Parallel",
+      "Next": "Archive Previous Raw Data",
+      "Branches": [
+        {
+          "StartAt": "/aws/lambda/Snapshot-Insight",
+          "States": {
+            "/aws/lambda/Snapshot-Insight": {
+              "Type": "Task",
+              "Parameters": {
+                "LogGroupName": "/aws/lambda/Snapshot-Insight"
+              },
+              "Resource": "arn:aws:states:::aws-sdk:cloudwatchlogs:deleteLogGroup",
+              "Next": "CreateLogGroup -/aws/lambda/Snapshot-Insight",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "BackoffRate": 2,
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "Comment": "States.ALL"
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "Next": "CreateLogGroup -/aws/lambda/Snapshot-Insight"
+                }
+              ]
+            },
+            "CreateLogGroup -/aws/lambda/Snapshot-Insight": {
+              "Type": "Task",
+              "Parameters": {
+                "LogGroupName": "/aws/lambda/Snapshot-Insight"
+              },
+              "Resource": "arn:aws:states:::aws-sdk:cloudwatchlogs:createLogGroup",
+              "End": true,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "BackoffRate": 2,
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "Comment": "States.ALL",
+                  "JitterStrategy": "FULL"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "StartAt": "/aws/lambda/Snapshot-Insight-S3Object-Archive",
+          "States": {
+            "/aws/lambda/Snapshot-Insight-S3Object-Archive": {
+              "Type": "Task",
+              "Parameters": {
+                "LogGroupName": "/aws/lambda/Snapshot-Insight-S3Object-Archive"
+              },
+              "Resource": "arn:aws:states:::aws-sdk:cloudwatchlogs:deleteLogGroup",
+              "Next": "CreateLogGroup -/aws/lambda/Snapshot-Insight-S3Object-Archive",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "BackoffRate": 2,
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "Comment": "States.ALL"
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "Next": "CreateLogGroup -/aws/lambda/Snapshot-Insight-S3Object-Archive"
+                }
+              ]
+            },
+            "CreateLogGroup -/aws/lambda/Snapshot-Insight-S3Object-Archive": {
+              "Type": "Task",
+              "Parameters": {
+                "LogGroupName": "/aws/lambda/Snapshot-Insight-S3Object-Archive"
+              },
+              "Resource": "arn:aws:states:::aws-sdk:cloudwatchlogs:createLogGroup",
+              "End": true,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "BackoffRate": 2,
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "Comment": "States.ALL",
+                  "JitterStrategy": "FULL"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "ResultSelector": {
+        "ParentExecId.$": "$$.Execution.Id",
+        "CurrentAccountId.$": "States.ArrayGetItem(States.StringSplit($$.Execution.Id, ':'),4)",
+        "CurrentRegion.$": "States.ArrayGetItem(States.StringSplit($$.Execution.Id, ':'),3)"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "BackoffRate": 2,
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "Comment": "States.ALL",
+          "JitterStrategy": "FULL"
+        }
+      ]
+    },
+    "Archive Previous Raw Data": {
+      "Type": "Map",
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "DISTRIBUTED",
+          "ExecutionType": "STANDARD"
+        },
+        "StartAt": "Lambda - Archive Raw S3 Object",
+        "States": {
+          "Lambda - Archive Raw S3 Object": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "OutputPath": "$.Payload",
+            "Parameters": {
+              "FunctionName": "${SnapshotInsightS3ObjectArchive}",
+              "Payload": {
+                "SourceBucket": "${RawDataS3Bucket}",
+                "SourceBucketKey.$": "$.keys.Key",
+                "TargetBucket": "${ArchiveDataS3Bucket}",
+                "TargetBucketPrefix": "raw/",
+                "CurrentDate.$": "States.Format('{}-{}-{}',States.ArrayGetItem(States.StringSplit($$.Execution.StartTime,'-T'),0),States.ArrayGetItem(States.StringSplit($$.Execution.StartTime,'-T'),1),States.ArrayGetItem(States.StringSplit($$.Execution.StartTime,'-T'),2))",
+                "ExecutionId.$": "$.ParentExecId"
+              }
+            },
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "IntervalSeconds": 15,
+                "MaxAttempts": 3,
+                "BackoffRate": 2,
+                "JitterStrategy": "FULL",
+                "Comment": "States.ALL"
+              }
+            ],
+            "End": true
+          }
+        }
+      },
+      "ItemReader": {
+        "Resource": "arn:aws:states:::s3:listObjectsV2",
+        "Parameters": {
+          "Bucket": "${RawDataS3Bucket}"
+        }
+      },
+      "MaxConcurrency": 1000,
+      "Label": "ArchivePreviousRawData",
+      "Next": "GetParameter deployment-type",
+      "ItemSelector": {
+        "ParentExecId.$": "$.ParentExecId",
+        "keys.$": "$$.Map.Item.Value"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "BackoffRate": 2,
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "Comment": "States.ALL",
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "ResultPath": null
+    },
+    "GetParameter deployment-type": {
+      "Type": "Task",
+      "Next": "Scan Entire Organization ?",
+      "Parameters": {
+        "Name": "/blog/snapshot-insight/deployment-type"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:ssm:getParameter",
+      "ResultSelector": {
+        "DeploymentType.$": "$.Parameter.Value"
+      },
+      "ResultPath": "$.SsmDeploymentType",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "BackoffRate": 2,
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "Comment": "States.ALL",
+          "JitterStrategy": "FULL"
+        }
+      ]
+    },
+    "Scan Entire Organization ?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.SsmDeploymentType.DeploymentType",
+          "StringEquals": "ORGANIZATION",
+          "Next": "Get All Active Accounts"
+        }
+      ],
+      "Default": "Process Current Account"
+    },
+    "Process Current Account": {
+      "Type": "Pass",
+      "Next": "Iterate Accounts",
+      "Parameters": {
+        "Accounts": [
+          {
+            "Id.$": "$.CurrentAccountId",
+            "Name": "Current_Account",
+            "Status": "ACTIVE"
+          }
+        ]
+      },
+      "OutputPath": "$.Accounts"
+    },
+    "Get All Active Accounts": {
+      "Type": "Task",
+      "Next": "Update Raw Data Bucket Policy",
+      "Parameters": {},
+      "Resource": "arn:aws:states:::aws-sdk:organizations:listAccounts",
+      "Credentials": {
+        "RoleArn": "arn:aws:iam::${ManagementAcntId}:role/SnapshotInsightMgmntAccountRole"
+      },
+      "OutputPath": "$.Accounts[?(@.Status == 'ACTIVE')]",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "BackoffRate": 2,
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "Comment": "States.ALL",
+          "JitterStrategy": "FULL"
+        }
+      ]
+    },
+    "Update Raw Data Bucket Policy": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "${SnapshotInsightUtilLambda}",
+        "Payload": {
+          "bucket_name": "${RawDataS3Bucket}",
+          "input.$": "$"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "Comment": "States.ALL",
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Next": "Iterate Accounts"
+    },
+    "Iterate Accounts": {
+      "Type": "Map",
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "INLINE"
+        },
+        "StartAt": "Format JSON - Accounts",
+        "States": {
+          "Format JSON - Accounts": {
+            "Type": "Pass",
+            "Next": "GetParameter deployment-regions",
+            "Parameters": {
+              "Id.$": "$.Id",
+              "Name.$": "$.Name",
+              "Status.$": "$.Status",
+              "Snapshot-Insight-CrossAccountAssumeRole.$": "States.Format('arn:aws:iam::{}:role/SnapshotInsightLambdaRole',$.Id)"
+            }
+          },
+          "GetParameter deployment-regions": {
+            "Type": "Task",
+            "Parameters": {
+              "Name": "/blog/snapshot-insight/deployment-regions"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:ssm:getParameter",
+            "ResultSelector": {
+              "DeploymentRegions.$": "States.StringSplit($.Parameter.Value,',')"
+            },
+            "ResultPath": "$.SsmDeploymentRegions",
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "BackoffRate": 2,
+                "IntervalSeconds": 1,
+                "MaxAttempts": 3,
+                "Comment": "States.ALL",
+                "JitterStrategy": "FULL"
+              }
+            ],
+            "Next": "Process Selected Regions"
+          },
+          "Process Selected Regions": {
+            "Type": "Pass",
+            "Next": "Iterate Regions",
+            "Parameters": {
+              "Id.$": "$.Id",
+              "Name.$": "$.Name",
+              "Status.$": "$.Status",
+              "Snapshot-Insight-CrossAccountAssumeRole.$": "$.Snapshot-Insight-CrossAccountAssumeRole",
+              "Regions": {
+                "Region.$": "States.ArrayUnique($.SsmDeploymentRegions.DeploymentRegions)"
+              }
+            }
+          },
+          "Iterate Regions": {
+            "Type": "Map",
+            "ItemProcessor": {
+              "ProcessorConfig": {
+                "Mode": "INLINE"
+              },
+              "StartAt": "Extract Orphan Resources Info - Parallel",
+              "States": {
+                "Extract Orphan Resources Info - Parallel": {
+                  "Type": "Parallel",
+                  "Branches": [
+                    {
+                      "StartAt": "RDS Instance",
+                      "States": {
+                        "RDS Instance": {
+                          "Type": "Task",
+                          "Resource": "arn:aws:states:::lambda:invoke",
+                          "Parameters": {
+                            "Payload": {
+                              "ops": "rds_ins",
+                              "account_id.$": "$.Id",
+                              "account_name.$": "$.Name",
+                              "region.$": "$.Region",
+                              "bucket_name": "${RawDataS3Bucket}",
+                              "key.$": "States.Format('rds_ins_raw/par_year={}/par_month={}/par_day={}/par_sf_exc_id={}/par_account_id={}/par_region={}/rds_ins.json',States.ArrayGetItem(States.StringSplit($$.Execution.StartTime,'-T'),0),States.ArrayGetItem(States.StringSplit($$.Execution.StartTime,'-T'),1),States.ArrayGetItem(States.StringSplit($$.Execution.StartTime,'-T'),2),$$.Execution.Id,$.Id,$.Region)",
+                              "step_execution_id_sa.$": "$$.Execution.Id"
+                            },
+                            "FunctionName.$": "$.SnapshotInsightLambdaFunc"
+                          },
+                          "Retry": [
+                            {
+                              "ErrorEquals": [
+                                "States.ALL"
+                              ],
+                              "IntervalSeconds": 3,
+                              "MaxAttempts": 10,
+                              "BackoffRate": 2,
+                              "JitterStrategy": "FULL",
+                              "Comment": "States.ALL"
+                            }
+                          ],
+                          "Next": "RDS Instance PutObject Status Choice",
+                          "ResultSelector": {
+                            "rdsInsPayload.$": "$.Payload"
+                          },
+                          "Credentials": {
+                            "RoleArn.$": "$.Snapshot-Insight-CrossAccountAssumeRole"
+                          }
+                        },
+                        "RDS Instance PutObject Status Choice": {
+                          "Type": "Choice",
+                          "Choices": [
+                            {
+                              "And": [
+                                {
+                                  "Variable": "$.rdsInsPayload.s3_upload_status",
+                                  "IsPresent": true
+                                },
+                                {
+                                  "And": [
+                                    {
+                                      "Not": {
+                                        "Variable": "$.rdsInsPayload.s3_upload_status",
+                                        "StringMatches": ""
+                                      }
+                                    },
+                                    {
+                                      "Not": {
+                                        "Variable": "$.rdsInsPayload.s3_upload_status",
+                                        "IsNull": true
+                                      }
+                                    }
+                                  ]
+                                }
+                              ],
+                              "Next": "Success RDS Instance Snapshot S3 Put Object"
+                            }
+                          ],
+                          "Default": "Ignore RDS Instance PutObject"
+                        },
+                        "Success RDS Instance Snapshot S3 Put Object": {
+                          "Type": "Pass",
+                          "End": true
+                        },
+                        "Ignore RDS Instance PutObject": {
+                          "Type": "Pass",
+                          "End": true,
+                          "Result": {
+                            "rdsInsDiscard": "$"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "StartAt": "RDS Cluster",
+                      "States": {
+                        "RDS Cluster": {
+                          "Type": "Task",
+                          "Resource": "arn:aws:states:::lambda:invoke",
+                          "Parameters": {
+                            "Payload": {
+                              "ops": "rds_cls",
+                              "account_id.$": "$.Id",
+                              "account_name.$": "$.Name",
+                              "region.$": "$.Region",
+                              "bucket_name": "${RawDataS3Bucket}",
+                              "key.$": "States.Format('rds_cls_raw/par_year={}/par_month={}/par_day={}/par_sf_exc_id={}/par_account_id={}/par_region={}/rds_cls.json',States.ArrayGetItem(States.StringSplit($$.Execution.StartTime,'-T'),0),States.ArrayGetItem(States.StringSplit($$.Execution.StartTime,'-T'),1),States.ArrayGetItem(States.StringSplit($$.Execution.StartTime,'-T'),2),$$.Execution.Id,$.Id,$.Region)",
+                              "step_execution_id_sa.$": "$$.Execution.Id"
+                            },
+                            "FunctionName.$": "$.SnapshotInsightLambdaFunc"
+                          },
+                          "Retry": [
+                            {
+                              "ErrorEquals": [
+                                "States.ALL"
+                              ],
+                              "IntervalSeconds": 3,
+                              "MaxAttempts": 10,
+                              "BackoffRate": 2,
+                              "JitterStrategy": "FULL",
+                              "Comment": "States.ALL"
+                            }
+                          ],
+                          "Next": "RDS Cluster PutObject Status Choice",
+                          "ResultSelector": {
+                            "rdsClsPayload.$": "$.Payload"
+                          },
+                          "Credentials": {
+                            "RoleArn.$": "$.Snapshot-Insight-CrossAccountAssumeRole"
+                          }
+                        },
+                        "RDS Cluster PutObject Status Choice": {
+                          "Type": "Choice",
+                          "Choices": [
+                            {
+                              "And": [
+                                {
+                                  "Variable": "$.rdsClsPayload.s3_upload_status",
+                                  "IsPresent": true
+                                },
+                                {
+                                  "And": [
+                                    {
+                                      "Not": {
+                                        "Variable": "$.rdsClsPayload.s3_upload_status",
+                                        "StringMatches": ""
+                                      }
+                                    },
+                                    {
+                                      "Not": {
+                                        "Variable": "$.rdsClsPayload.s3_upload_status",
+                                        "IsNull": true
+                                      }
+                                    }
+                                  ]
+                                }
+                              ],
+                              "Next": "Success RDS Cluster Snapshot S3 Put Object"
+                            }
+                          ],
+                          "Default": "Ignore RDS Cluster PutObject"
+                        },
+                        "Success RDS Cluster Snapshot S3 Put Object": {
+                          "Type": "Pass",
+                          "End": true
+                        },
+                        "Ignore RDS Cluster PutObject": {
+                          "Type": "Pass",
+                          "End": true,
+                          "Result": {
+                            "rdsClsDiscard": "$"
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "End": true
+                }
+              }
+            },
+            "ItemsPath": "$.Regions.Region",
+            "ItemSelector": {
+              "Id.$": "$.Id",
+              "Name.$": "$.Name",
+              "Status.$": "$.Status",
+              "Region.$": "$$.Map.Item.Value",
+              "Snapshot-Insight-CrossAccountAssumeRole.$": "States.Format('arn:aws:iam::{}:role/SnapshotInsightLambdaRole',$.Id)",
+              "SnapshotInsightLambdaFunc.$": "States.Format('arn:aws:lambda:{}:{}:function:Snapshot-Insight',States.ArrayGetItem(States.StringSplit($$.Execution.Id, ':'),3),$.Id)"
+            },
+            "InputPath": "$",
+            "End": true
+          }
+        }
+      },
+      "Next": "Format JSON -Discard Null Output",
+      "ResultSelector": {
+        "OutputCopyflattenArray.$": "$[*][*][*]"
+      },
+      "OutputPath": "$.OutputCopyflattenArray"
+    },
+    "Format JSON -Discard Null Output": {
+      "Type": "Pass",
+      "Parameters": {
+        "rds_ins.$": "$.[*].rdsInsPayload",
+        "rds_cls.$": "$.[*].rdsClsPayload"
+      },
+      "Next": "Is Orphan Snapshot Found"
+    },
+    "Is Orphan Snapshot Found": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Or": [
+            {
+              "Variable": "$.rds_ins[0]",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.rds_cls[0]",
+              "IsPresent": true
+            }
+          ],
+          "Next": "Start RawDataCrawler"
+        }
+      ],
+      "Default": "Archive Previous Formatted Data"
+    },
+    "Start RawDataCrawler": {
+      "Type": "Task",
+      "Parameters": {
+        "Name": "${RawDataCrawler}"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+      "ResultPath": null,
+      "Next": "Get RawDataCrawler Status",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Glue.CrawlerRunningException"
+          ],
+          "BackoffRate": 2,
+          "IntervalSeconds": 120,
+          "MaxAttempts": 3,
+          "Comment": "Glue.CrawlerRunningException",
+          "JitterStrategy": "FULL"
+        }
+      ]
+    },
+    "Get RawDataCrawler Status": {
+      "Type": "Task",
+      "Parameters": {
+        "Name": "${RawDataCrawler}"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:glue:getCrawler",
+      "Next": "Is RawData Crawler Running",
+      "ResultSelector": {
+        "ParentExecId.$": "$$.Execution.Id",
+        "RawCrawlerStatus.$": "$.Crawler.State"
+      },
+      "ResultPath": "$.TaskResult",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "BackoffRate": 2,
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "Comment": "States.ALL",
+          "JitterStrategy": "FULL"
+        }
+      ]
+    },
+    "Is RawData Crawler Running": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.TaskResult.RawCrawlerStatus",
+          "StringEquals": "RUNNING",
+          "Next": "Wait 15 Sec - Raw Data Crawler to Finish"
+        }
+      ],
+      "Default": "Archive Previous Formatted Data"
+    },
+    "Wait 15 Sec - Raw Data Crawler to Finish": {
+      "Type": "Wait",
+      "Seconds": 15,
+      "Next": "Get RawDataCrawler Status"
+    },
+    "Archive Previous Formatted Data": {
+      "Type": "Map",
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "DISTRIBUTED",
+          "ExecutionType": "STANDARD"
+        },
+        "StartAt": "Lambda - Archive Formatted S3 Object",
+        "States": {
+          "Lambda - Archive Formatted S3 Object": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "OutputPath": "$.Payload",
+            "Parameters": {
+              "FunctionName": "${SnapshotInsightS3ObjectArchive}",
+              "Payload": {
+                "SourceBucket": "${FormattedDataS3Bucket}",
+                "SourceBucketKey.$": "$.keys.Key",
+                "TargetBucket": "${ArchiveDataS3Bucket}",
+                "TargetBucketPrefix": "formatted/",
+                "CurrentDate.$": "States.Format('{}-{}-{}',States.ArrayGetItem(States.StringSplit($$.Execution.StartTime,'-T'),0),States.ArrayGetItem(States.StringSplit($$.Execution.StartTime,'-T'),1),States.ArrayGetItem(States.StringSplit($$.Execution.StartTime,'-T'),2))",
+                "ExecutionId.$": "$.ParentExecId"
+              }
+            },
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "IntervalSeconds": 30,
+                "MaxAttempts": 3,
+                "BackoffRate": 2,
+                "JitterStrategy": "FULL",
+                "Comment": "States.ALL"
+              }
+            ],
+            "End": true
+          }
+        }
+      },
+      "ItemReader": {
+        "Resource": "arn:aws:states:::s3:listObjectsV2",
+        "Parameters": {
+          "Bucket": "${FormattedDataS3Bucket}"
+        }
+      },
+      "MaxConcurrency": 1000,
+      "Label": "ArchivePreviousFormattedData",
+      "ItemSelector": {
+        "ParentExecId.$": "$$.Execution.Id",
+        "keys.$": "$$.Map.Item.Value"
+      },
+      "Next": "Data Formatting Parallel"
+    },
+    "Data Formatting Parallel": {
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "RDS Instance Data Formatting",
+          "States": {
+            "RDS Instance Data Formatting": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::glue:startJobRun.sync",
+              "Parameters": {
+                "JobName": "${RdsInsEtlJobName}"
+              },
+              "End": true,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "BackoffRate": 2,
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "Comment": "States.ALL",
+                  "JitterStrategy": "FULL"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "StartAt": "RDS Cluster Data Formatting",
+          "States": {
+            "RDS Cluster Data Formatting": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::glue:startJobRun.sync",
+              "Parameters": {
+                "JobName": "SnapshotInsightRdsClsJsonToParquet"
+              },
+              "End": true,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "BackoffRate": 2,
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "Comment": "States.ALL",
+                  "JitterStrategy": "FULL"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "Next": "Post Run Data Prep Crawler Parallel"
+    },
+    "Post Run Data Prep Crawler Parallel": {
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "Start FormattedDataCrawler",
+          "States": {
+            "Start FormattedDataCrawler": {
+              "Type": "Task",
+              "Parameters": {
+                "Name": "${FormattedDataCrawler}"
+              },
+              "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+              "ResultPath": null,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Glue.CrawlerRunningException"
+                  ],
+                  "BackoffRate": 2,
+                  "IntervalSeconds": 120,
+                  "MaxAttempts": 3,
+                  "Comment": "Glue.CrawlerRunningException",
+                  "JitterStrategy": "FULL"
+                }
+              ],
+              "Next": "Get FormattedDataCrawler Status"
+            },
+            "Get FormattedDataCrawler Status": {
+              "Type": "Task",
+              "Parameters": {
+                "Name": "${FormattedDataCrawler}"
+              },
+              "Resource": "arn:aws:states:::aws-sdk:glue:getCrawler",
+              "ResultSelector": {
+                "ParentExecId.$": "$$.Execution.Id",
+                "FormattedCrawlerStatus.$": "$.Crawler.State"
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "BackoffRate": 2,
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "Comment": "States.ALL",
+                  "JitterStrategy": "FULL"
+                }
+              ],
+              "Next": "Is FormattedData Crawler Running"
+            },
+            "Is FormattedData Crawler Running": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.FormattedCrawlerStatus",
+                  "StringEquals": "RUNNING",
+                  "Next": "Wait 15 Sec - Formatted Data Crawler to Finish"
+                }
+              ],
+              "Default": "To End"
+            },
+            "Wait 15 Sec - Formatted Data Crawler to Finish": {
+              "Type": "Wait",
+              "Seconds": 15,
+              "Next": "Get FormattedDataCrawler Status"
+            },
+            "To End": {
+              "Type": "Pass",
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "Start ArchiveDataCrawler",
+          "States": {
+            "Start ArchiveDataCrawler": {
+              "Type": "Task",
+              "Parameters": {
+                "Name": "${FrmtArchDataCrawler}"
+              },
+              "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+              "ResultPath": null,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Glue.CrawlerRunningException"
+                  ],
+                  "BackoffRate": 2,
+                  "IntervalSeconds": 120,
+                  "MaxAttempts": 3,
+                  "Comment": "Glue.CrawlerRunningException",
+                  "JitterStrategy": "FULL"
+                }
+              ],
+              "End": true
+            }
+          }
+        }
+      ],
+      "End": true
+    }
+  }
+}
